@@ -1,8 +1,8 @@
 #include<reg51.h>
 #include "font.h"
 
-#define ROAD_POINTS_MAX 6
-#define ENEMIES_MAX 4
+#define ROAD_POINTS_MAX 8
+#define OBSTACLES_MAX 4
 
 /* Configure the data bus and Control bus as per the hardware connection
    Dtatus bus is connected to P20:P27 and control bus P00:P04*/
@@ -23,26 +23,26 @@ sbit C1 = P0^4;
 sbit C2 = P0^5;
 sbit C3 = P0^6;
 
-typedef struct {
-    unsigned char x;
-    unsigned char last_x;
-    unsigned char speed;
-    unsigned char lives;
-} Player;
-
-Player player;
-
 unsigned int seed;
 unsigned int distance;
+unsigned int last_distance;
+unsigned char game_over_flag;
+unsigned char win_flag;
+unsigned char tunnel_flag;
+
+unsigned char player_x;
+unsigned char player_last_x;
+unsigned char player_speed;
+unsigned char player_lives;
+
 unsigned char road_radius;
 unsigned char road_last_min_x[8];
 unsigned char road_last_max_x[8];
 unsigned char road_points_x[ROAD_POINTS_MAX];
 unsigned int road_points_y[ROAD_POINTS_MAX];
-unsigned char road_points_t_step[ROAD_POINTS_MAX];
 
-unsigned char enemies_x[ENEMIES_MAX];
-unsigned char enemies_y[ENEMIES_MAX];
+unsigned char obstacles_x[OBSTACLES_MAX];
+unsigned int obstacles_y[OBSTACLES_MAX];
 
 void delay(unsigned int count) {
 	int i;
@@ -154,8 +154,17 @@ void GLCD_write_data(char dat)
 	EN = 0;
 }
 
-void GLCD_write_char(char code *ptr_array)
-{
+void GLCD_set_column(unsigned char col) {
+    if (col < 64)
+        GLCD_write_cmd(0x40 + col);
+}
+
+void GLCD_set_row(unsigned char row) {
+    if (row < 8)
+        GLCD_write_cmd(0xB8 + row);
+}
+
+void GLCD_write_char(char code *ptr_array) {
     int i;
     for(i=0;i<6;i++) // 5x7 font, 5 chars + 1 blankspace
         GLCD_write_data(ptr_array[i]);
@@ -218,19 +227,6 @@ void GLCD_clear_screen()		/* GLCD all display clear function */
 	GLCD_write_cmd(0xB8);	/* Set x address (page=0) */
 }
 
-void GLCD_set_column(unsigned char col) {
-    if (col < 64)
-    GLCD_write_cmd(0x40 + col);
-}
-
-void GLCD_set_row(unsigned char row) {
-    GLCD_write_cmd(0xB8 + row);
-}
-
-// void GLCD_scroll_screen(unsigned char z) {
-// 	GLCD_write_cmd(0xc0 + z);
-// }
-
 void int_to_str5(unsigned int v, char *buf) {
     buf[0] = '0' + ((v / 10000) % 10);
     buf[1] = '0' + ((v / 1000) % 10);
@@ -251,23 +247,14 @@ unsigned int rand() {
 
 unsigned int rand_range(unsigned int a, unsigned int b) {
     seed = seed * 1103515245 + 12345;
-    return a + seed % (b - a);
-}
-
-// Simple hash function for deterministic "randomness"
-unsigned int simple_hash(unsigned int x) {
-    x ^= x >> 13;
-    x *= 0x45d9f3b;
-    // x += distance;
-    x ^= x >> 16;
-    return x;
+    return a + (seed % (b - a));
 }
 
 void hud_update_distance() {
     char buf[6];
     GLCD_select_panel(1);
     GLCD_set_row(2);
-    GLCD_set_column(33);
+    GLCD_set_column(34);
     int_to_str5(distance, buf);
     GLCD_write_string(buf);
 }
@@ -275,15 +262,15 @@ void hud_update_distance() {
 void hud_update_speed() {
     GLCD_select_panel(1);
     GLCD_set_row(3);
-    GLCD_set_column(57);
-    GLCD_write_char(get_char(int_to_str1(player.speed)));
+    GLCD_set_column(58);
+    GLCD_write_char(get_char(int_to_str1(player_speed)));
 }
 
 void hud_update_lives() {
     GLCD_select_panel(1);
     GLCD_set_row(4);
-    GLCD_set_column(57);
-    GLCD_write_char(get_char(int_to_str1(player.lives)));
+    GLCD_set_column(58);
+    GLCD_write_char(get_char(int_to_str1(player_lives)));
 }
 
 void hud_draw() {
@@ -301,78 +288,34 @@ void hud_draw() {
     GLCD_set_column(0);
     GLCD_write_string("LIVES");
 
+    hud_update_distance();
     hud_update_speed();
     hud_update_lives();
 }
 
-
 int collision_check(unsigned char x) {
-    if (x >= player.x && x <= player.x + 6) {
+    if (x >= player_x && x <= player_x + 6) {
         return 1;
     } else {
         return 0;
     }
 }
 
-void game_over() {
-
-}
-
-void crash(unsigned char x) {
-    player.lives--;
-    if (player.lives < 0) {
-        game_over();
-    }
-    hud_update_lives();
-    GLCD_select_panel(0);
-	GLCD_set_row(6);	    /* Set page */
-	GLCD_set_column(player.x);	/* Set column */
-    GLCD_write_char(crash_sprite);
-    delay_ms(400);
-    player.x = x - 3;
-}
-
-void enemy_respawn() {
-    unsigned char x;
-    unsigned int i, y;
-
-    for (i = 1; i < ENEMIES_MAX; i++) {
-        enemies_x[i-1] = enemies_x[i];
-        enemies_y[i-1] = enemies_y[i];
-    }
-
-    // y = enemies_y[ENEMIES_MAX - 1] +;
-}
-
-void enemies_update() {
-    unsigned char i;
-
-    for (i = 0; i < ENEMIES_MAX; i++) {
-        // enemies_y[]
-    }
-}
-
 void road_new_segment() {
-    unsigned char x;
-    int seg_len, i;
+    int i;
 
     for (i = 1; i < ROAD_POINTS_MAX; i++) {
         road_points_x[i-1] = road_points_x[i];
         road_points_y[i-1] = road_points_y[i];
-        road_points_t_step[i-1] = road_points_t_step[i];
     }
 
     road_points_x[ROAD_POINTS_MAX - 1] = rand_range(road_radius, 63 - road_radius);
-    road_points_y[ROAD_POINTS_MAX - 1] = road_points_y[ROAD_POINTS_MAX - 2] + 60 + (rand() & 0x1f);
-
-    seg_len = road_points_y[ROAD_POINTS_MAX - 1] - road_points_y[ROAD_POINTS_MAX - 2];
-    road_points_t_step[ROAD_POINTS_MAX - 2] = 256 / seg_len;
-    // serial_send(x);
-    // serial_send(road_points_y[5]);
+    road_points_y[ROAD_POINTS_MAX - 1] = road_points_y[ROAD_POINTS_MAX - 2] + 60 + (rand() & 0x3f);
 }
 
 void road_update() {
-    distance += player.speed + 1;
+    last_distance = distance;
+    distance += player_speed;
     hud_update_distance();
 
     if (road_points_y[1] < distance) {
@@ -385,7 +328,9 @@ unsigned char lerp(unsigned char a, unsigned char b, unsigned char t) {
     return a + (((b - a) * t) >> 8);  // Fast linear interpolation
 }
 
-unsigned char road_get_x_from_y(unsigned int y, unsigned char point) {
+// interpola x entre um ponto e o ponto seguinte da entrada
+// y em coordenadas do universo
+unsigned char road_get_x(unsigned int y, unsigned char point) {
     unsigned char x0, x1, seg_len, t;
     int y0, y1;
 
@@ -401,18 +346,179 @@ unsigned char road_get_x_from_y(unsigned int y, unsigned char point) {
     return lerp(x0, x1, t);
 }
 
-unsigned char road_get_x(unsigned char t, unsigned char point) {
-    // unsigned char seg;
-    unsigned char p0, p1;
+unsigned char find_road_segment(unsigned int y) {
+    unsigned char seg;
+    for (seg = 0; seg < ROAD_POINTS_MAX - 1; seg++) {
+        if (y > road_points_y[seg] && y <= road_points_y[seg+1]) {
+            return seg;
+        }
+    }
+    return ROAD_POINTS_MAX - 2;  // fallback: last segment
+}
 
-    // Get control points for this segment
-    p0 = road_points_x[point];
-    p1 = road_points_x[point+1];
+void obstacle_respawn() {
+    unsigned int i, y, road;
 
-    // Return the interpolated X
-    return lerp(p0, p1, t);
+    for (i = 1; i < OBSTACLES_MAX; i++) {
+        obstacles_x[i-1] = obstacles_x[i];
+        obstacles_y[i-1] = obstacles_y[i];
+    }
 
-    // return abs((y % ((63 -  2 * road_radius) * 2)) - (63 - 2 * road_radius)) + road_radius;
+    y = obstacles_y[OBSTACLES_MAX - 2] + 60 + (rand() & 0x3f);
+    road = (unsigned int)road_get_x(y, find_road_segment(y));
+
+    obstacles_x[OBSTACLES_MAX - 1] = (unsigned char)rand_range(road - road_radius + 2, road + road_radius - 8);
+    obstacles_y[OBSTACLES_MAX - 1] = y;
+}
+
+int f1(int x, int y) {
+    int x1, C;
+    x1 = player_x + 6;
+
+    // Compute C
+    C = 705 + 8*x1;
+
+    // Plug in implicit line
+    return -8 * x - 15 * y + C;
+}
+
+int f1_prime(int x, int y) {
+    int x1, y1, dx, dy, b, C;
+    x1 = player_x;
+    y1 = 63 - 16;
+    dx = -15;
+    dy = -8;
+
+    // Compute C
+    C = dx*y1 - dy*x1;
+
+    // Plug in implicit line
+    return dy * x - dx * y + C;
+}
+
+unsigned char get_mask_xy(unsigned char x, unsigned char y, unsigned char page) {
+    if (page == 7 || page < 2) {
+        return 1;
+    }
+
+    else if (page == 2) {
+        return (f1(x, y) < 0 || f1_prime(x, y) > 0);
+    }
+
+    return 0;
+}
+
+unsigned char byte_mask(unsigned char x, unsigned char page) {
+    unsigned char byte = 0, b;
+
+    for (b = 0; b < 8; b++) {
+        if (get_mask_xy(x, (7 - page) * 8 + b, page)) {
+            byte |= 0x80 >> b;
+        }
+    }
+
+    return byte;
+}
+
+void GLCD_write_char_xy(unsigned char x, unsigned char y, unsigned char code *ptr_array) {
+    int i;
+    unsigned char page = y >> 3;
+    unsigned char offset = y & 0x07;
+    unsigned char byte;
+
+    if (page < 8){
+        GLCD_set_row(7 - page);
+        GLCD_set_column(x);
+        for(i=0;i<6;i++) { // 5x7 font, 5 chars + 1 blankspace
+            byte = ptr_array[i] << (8 - offset);
+            if (tunnel_flag) byte |= byte_mask(x + i, 7 - page);
+            GLCD_write_data(byte);
+        }
+    }
+
+    if (page > 0) {
+        GLCD_set_row(8 - page);
+        GLCD_set_column(x);
+        for(i=0;i<6;i++) { // 5x7 font, 5 chars + 1 blankspace
+            byte = ptr_array[i] >> offset;
+            if (tunnel_flag) byte |= byte_mask(x + i, 8 - page);
+            GLCD_write_data(byte);
+        }
+    }
+}
+
+void crash() {
+    GLCD_select_panel(0);
+	GLCD_set_row(6);
+	GLCD_set_column(player_x);
+    GLCD_write_char(crash_sprite);
+    
+    if (player_lives == 0) {
+        game_over_flag = 1;
+        return;
+    }
+    player_lives--;
+    hud_update_lives();
+
+    delay_ms(400);
+    
+    GLCD_select_panel(0);
+
+    if (obstacles_y[0] - distance < 40) {
+        GLCD_write_char_xy(obstacles_x[0], obstacles_y[0] - distance, space);
+        obstacle_respawn();
+    }
+
+    GLCD_set_row(6);
+    GLCD_set_column(player_x);
+    GLCD_write_char(space);
+    player_x = road_get_x(distance + 16, find_road_segment(distance + 16)) - 3;
+    GLCD_set_column(player_x);
+    GLCD_write_char(car_sprite);
+    
+    delay_ms(200);
+}
+
+void tunnel_draw() {
+    unsigned char page, x;
+
+    GLCD_select_panel(0);
+
+    for (page = 0; page < 8; page++) {
+		GLCD_set_row(page);
+        GLCD_set_column(0);
+        for (x = 0; x < 64; x++) {
+			GLCD_write_data(byte_mask(x, page));
+        }
+    }
+}
+
+void obstacles_update() {
+    if (obstacles_y[0] < distance) {
+        obstacle_respawn();
+    }
+}
+
+void obstacles_draw() {
+    unsigned int y, last_y;
+    unsigned char i;
+
+    GLCD_select_panel(0);
+
+    for (i = 0; i < OBSTACLES_MAX; i++) {
+        y = obstacles_y[i] - distance;
+        last_y = obstacles_y[i] - last_distance;
+
+        if (last_y > 0 && last_y <= 71) GLCD_write_char_xy(obstacles_x[i], last_y, space);
+        if (y > 0 && y <= 71) GLCD_write_char_xy(obstacles_x[i], y, obstacle_sprite);
+
+        if (y > 8 && y < 24) {
+            if (collision_check(obstacles_x[i]) || collision_check(obstacles_x[i] + 6)) {
+                GLCD_write_char_xy(obstacles_x[i], y, crash_sprite);
+                crash();
+            }
+        }
+    }
 }
 
 void road_draw_page(unsigned char page, unsigned char road_x[8]) {
@@ -444,6 +550,7 @@ void road_draw_page(unsigned char page, unsigned char road_x[8]) {
                 byte |= (0x80 >> b);
             }
         }
+        if (tunnel_flag) byte |= byte_mask(i, page);
         GLCD_write_data(byte);
     }
     
@@ -457,114 +564,117 @@ void road_draw_page(unsigned char page, unsigned char road_x[8]) {
                 byte |= (0x80 >> b);
             }
         }
+        if (tunnel_flag) byte |= byte_mask(i, page);
         GLCD_write_data(byte);
     }
 }
 
+// desenha um frame da estrada
 void road_draw() {
-    unsigned char page, t, t_step, seg, seg_len, b;
+    unsigned char page, seg, b;
     unsigned int y = distance;
     unsigned char road_x[8];  // Pre-calculate positions
 
     seg = 0;
-    // seg_len = road_points_y[seg+1] - road_points_y[seg];
-    // t = ((y - road_points_y[seg]) * 256) / seg_len;
-    // t_step = road_points_t_step[seg];
 
     GLCD_select_panel(0);
 
     for(page = 0; page < 8; page++) {
         for (b = 0; b < 8; b++) {
-            road_x[b] = road_get_x_from_y(y, seg);
+            road_x[b] = road_get_x(y, seg);
             y++;
-            // t += t_step;
 
             if (y >= road_points_y[seg+1]) {  // hit next segment
                 seg++;
-                // t = 0;
-                // t_step = road_points_t_step[seg];
             }
+            
             if (page == 1){
                 if (collision_check(road_x[b] - road_radius) || collision_check(road_x[b] + road_radius)) {
-                    crash(road_x[b]);
+                    crash();
                 }
             }
         }
         road_draw_page(7 - page, road_x);
     }
-
-    // delay_ms(800);
 }
 
 void player_draw() {
-    if (player.x != player.last_x) {
+    if (player_x != player_last_x) {
         GLCD_select_panel(0);
         GLCD_set_row(6);	    /* Set page */
-        GLCD_set_column(player.last_x);	/* Set column */
+        GLCD_set_column(player_last_x);	/* Set column */
         GLCD_write_char(space);
-        GLCD_set_column(player.x);	/* Set column */
+        GLCD_set_column(player_x);	/* Set column */
         GLCD_write_char(car_sprite);
     }
 }
 
-void enemy_draw() {
-
-}
-
-void input_update() {
+void player_update() {
     char input;
+    player_last_x = player_x;
     input = serial_receive();
     switch (input) {
         case '7':
-            player.x -= 3;
-            if (player.x <= 0) {
-                player.x = 0;
+            if (player_x <= 3) {
+                player_x = 0;
+            } else {
+                player_x -= 3;
             }
             break;
         case '9':
-            player.x += 3;
-            if (player.x >= 58) {
-                player.x = 58;
+            player_x += 3;
+            if (player_x >= 58) {
+                player_x = 58;
             }
             break;
         case '1':
-            player.speed = 1;
+            player_speed = 1;
             break;
         case '2':
-            player.speed = 2;
+            player_speed = 2;
             break;
         case '3':
-            player.speed = 3;
+            player_speed = 3;
             break;
         case '4':
-            player.speed = 4;
+            player_speed = 4;
             break;
         case '5':
-            player.speed = 5;
+            player_speed = 5;
+            break;
+        case '6':
+            crash();
             break;
     }
     hud_update_speed();
 }
 
 void game_update() {
-    input_update();
     player_draw();
-    player.last_x = player.x;
-    road_update();
+    obstacles_draw();
     road_draw();
+    player_update();
+    obstacles_update();
+    road_update();
+
+    // if (distance >= 100 && !tunnel_flag) {
+    //     tunnel_flag = 1;
+    //     tunnel_draw();
+    // }
+
+    if (distance >= 15000) win_flag = 1;
 }
 
 void player_init() {
-    player.x = 29;
-    player.speed = 3;
-    player.lives = 9;
+    player_x = 29;
+    player_speed = 3;
+    player_lives = 9;
 }
 
-void road_init(unsigned int seed) {
+void road_init() {
     int i;
 
-    road_radius = 15;
-    distance = 0;
+    road_radius = 18;
     for (i = 0; i < 8; i++) {
         road_last_min_x[i] = 63;
         road_last_max_x[i] = 0;
@@ -574,30 +684,117 @@ void road_init(unsigned int seed) {
     road_points_x[ROAD_POINTS_MAX - 1] = 31;
 
     road_points_y[ROAD_POINTS_MAX - 2] = 0;
-    road_points_y[ROAD_POINTS_MAX - 1] = 60;
-    
-    road_points_t_step[ROAD_POINTS_MAX - 2] = 256 / 60;
+    road_points_y[ROAD_POINTS_MAX - 1] = 80;
     
     for (i = 0; i < ROAD_POINTS_MAX - 2; i ++) {
         road_new_segment();
     }
 }
 
+void obstacles_init() {
+    unsigned char i;
+
+    obstacles_x[OBSTACLES_MAX - 1] = 40;
+    obstacles_y[OBSTACLES_MAX - 1] = 60;
+    
+    for (i = 0; i < OBSTACLES_MAX; i ++) {
+        obstacle_respawn();
+    }
+}
+
 void game_init() {
+    distance = 0;
+    last_distance = 0;
+    game_over_flag = 0;
+    win_flag = 0;
     player_init();
-    road_init(10);
+    road_init();
+    obstacles_init();
     GLCD_clear_screen();
-    road_draw();
     player_draw();
+    road_draw();
+    hud_draw();
+}
+
+void game_over() {
+    GLCD_select_panel(0);
+    GLCD_set_row(2);
+    GLCD_set_column(20);
+    GLCD_write_string("GAME");
+    GLCD_set_row(3);
+    GLCD_set_column(20);
+    GLCD_write_string("OVER");
+    game_over_flag = 0;
+    delay_ms(1000);
+    RI = 0;
+
+    while (!(serial_receive()));
+    
+    GLCD_set_row(2);
+    GLCD_set_column(20);
+    GLCD_write_string("    ");
+    GLCD_set_row(3);
+    GLCD_set_column(20);
+    GLCD_write_string("    ");
+}
+
+void win() {
+    GLCD_select_panel(0);
+    GLCD_set_row(2);
+    GLCD_set_column(4);
+    GLCD_write_string("WELL DONE");
+    GLCD_set_row(3);
+    GLCD_set_column(10);
+    GLCD_write_string("YOU WIN");
+    win_flag = 0;
+    delay_ms(1000);
+    RI = 0;
+
+    while (!(serial_receive()));
+    
+    GLCD_set_row(2);
+    GLCD_set_column(4);
+    GLCD_write_string("         ");
+    GLCD_set_row(3);
+    GLCD_set_column(10);
+    GLCD_write_string("       ");
+}
+
+void title() {
+    GLCD_select_panel(0);
+    GLCD_set_row(2);
+    GLCD_set_column(4);
+    GLCD_write_string("STOCK CAR");
+
+    while (!(serial_receive())) {
+        seed++;
+    }
+
+    GLCD_set_column(4);
+    GLCD_write_string("         ");
 }
 
 int main() {
+    seed = 10;
     serial_init();
     GLCD_init();
-    game_init();
-    hud_draw();
     while(1) {
-        game_update();
-        delay(100);
+        game_init();
+        title();
+
+        while (1) {
+            game_update();
+            delay_ms(12);
+
+            if (game_over_flag) {
+                game_over();
+                break;
+            }
+
+            if (win_flag) {
+                win();
+                break;
+            }
+        }
     }
 }
