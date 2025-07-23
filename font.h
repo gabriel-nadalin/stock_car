@@ -1,3 +1,5 @@
+// adaptado de https://github.com/thegeek82000/openGLCD/blob/master/fonts/System5x7.h
+
 // Each glyph is 6 bytes (5 columns + 1 spacing)
 const unsigned char code font_digits[10][6] = {
     {0x3E, 0x51, 0x49, 0x45, 0x3E, 0x00}, // 0
