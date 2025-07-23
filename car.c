@@ -60,8 +60,8 @@ void serial_init(void) {
     TH1 = 0xFD;        // Baud rate 9600
     SCON = 0x50;       // Modo 1, 8 bits, REN habilitado
     TR1 = 1;           // Inicia Timer1
-    ES = 0;            // Habilita interrup��o serial
-    EA = 0;            // Habilita interrup��es globais
+    ES = 0;            // Habilita interrupcao serial
+    EA = 0;            // Habilita interrupcoes globais
 }
 
 char serial_receive(void) {
@@ -641,9 +641,6 @@ void player_update() {
             break;
         case '5':
             player_speed = 5;
-            break;
-        case '6':
-            crash();
             break;
     }
     hud_update_speed();
