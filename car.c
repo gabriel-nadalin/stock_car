@@ -6,13 +6,13 @@
 
 /* Configure the data bus and Control bus as per the hardware connection
    Dtatus bus is connected to P20:P27 and control bus P00:P04*/
-#define GlcdDataBus  P2
-sbit RS  = P1^0;
-sbit EN  = P1^1;
-sbit CS1 = P1^2;
-sbit CS2 = P1^3;
-sbit RW  = P1^4;
-sbit RST = P1^5; // Assuming unused pin
+#define GlcdDataBus P3
+sbit RS  = P2^0;
+sbit EN  = P2^2;
+sbit CS1 = P2^3;
+sbit CS2 = P2^4;
+sbit RW  = P2^1;
+sbit RST = P2^5; // Assuming unused pin
 
 // Keypad
 sbit R1 = P0^0;
@@ -76,42 +76,42 @@ void serial_send(char dat) {
     while (TI == 0);
 }
 
-// char keypad_read()
-// {
-// 	C1=1;
-// 	C2=1;
-// 	C3=1;
+char keypad_read()
+{
+	C1=1;
+	C2=1;
+	C3=1;
 
-// 	R1=0;
-// 	R2=1;
-// 	R3=1;
-// 	R4=1;
-// 	if(C1==0){delay_ms(50);return '3';}
-// 	if(C2==0){delay_ms(50);return '2';}
-// 	if(C3==0){delay_ms(50);return '1';}
-// 	R1=1;
-// 	R2=0;
-// 	R3=1;
-// 	R4=1;
-// 	if(C1==0){delay_ms(50);return '6';}
-// 	if(C2==0){delay_ms(50);return '5';}
-// 	if(C3==0){delay_ms(50);return '4';}
-// 	R1=1;
-// 	R2=1;
-// 	R3=0;
-// 	R4=1;
-// 	if(C1==0){delay_ms(50);return '9';}
-// 	if(C2==0){delay_ms(50);return '8';}
-// 	if(C3==0){delay_ms(50);return '7';}
-// 	R1=1;
-// 	R2=1;
-// 	R3=1;
-// 	R4=0;
-// 	if(C1==0){delay_ms(50);return '#';}
-// 	if(C2==0){delay_ms(50);return '0';}
-// 	if(C3==0){delay_ms(50);return '*';}
-// 	return 0;
-// }
+	R1=0;
+	R2=1;
+	R3=1;
+	R4=1;
+	if(C1==0){delay_ms(5);return '3';}
+	if(C2==0){delay_ms(5);return '2';}
+	if(C3==0){delay_ms(5);return '1';}
+	R1=1;
+	R2=0;
+	R3=1;
+	R4=1;
+	if(C1==0){delay_ms(5);return '6';}
+	if(C2==0){delay_ms(5);return '5';}
+	if(C3==0){delay_ms(5);return '4';}
+	R1=1;
+	R2=1;
+	R3=0;
+	R4=1;
+	if(C1==0){delay_ms(5);return '9';}
+	if(C2==0){delay_ms(5);return '8';}
+	if(C3==0){delay_ms(5);return '7';}
+	R1=1;
+	R2=1;
+	R3=1;
+	R4=0;
+	if(C1==0){delay_ms(5);return '#';}
+	if(C2==0){delay_ms(5);return '0';}
+	if(C3==0){delay_ms(5);return '*';}
+	return 0;
+}
 
 void GLCD_select_panel(int panel) {
     switch (panel) {
@@ -277,15 +277,18 @@ void hud_draw() {
     GLCD_select_panel(1);
     GLCD_set_row(2);
     GLCD_set_column(0);
+    GLCD_write_data(0);
     GLCD_write_string("DIST.");
 
     GLCD_set_row(3);
     GLCD_set_column(0);
+    GLCD_write_data(0);
     GLCD_write_string("SPEED");
 
     
     GLCD_set_row(4);
     GLCD_set_column(0);
+    GLCD_write_data(0);
     GLCD_write_string("LIVES");
 
     hud_update_distance();
@@ -364,62 +367,160 @@ void obstacle_respawn() {
         obstacles_y[i-1] = obstacles_y[i];
     }
 
-    y = obstacles_y[OBSTACLES_MAX - 2] + 60 + (rand() & 0x3f);
+    y = obstacles_y[OBSTACLES_MAX - 2] + 50 + (rand() & 0x3f);
     road = (unsigned int)road_get_x(y, find_road_segment(y));
 
     obstacles_x[OBSTACLES_MAX - 1] = (unsigned char)rand_range(road - road_radius + 2, road + road_radius - 8);
     obstacles_y[OBSTACLES_MAX - 1] = y;
 }
 
-int f1(int x, int y) {
-    int x1, C;
-    x1 = player_x + 6;
-
-    // Compute C
-    C = 705 + 8*x1;
-
-    // Plug in implicit line
-    return -8 * x - 15 * y + C;
-}
-
-int f1_prime(int x, int y) {
-    int x1, y1, dx, dy, b, C;
-    x1 = player_x;
-    y1 = 63 - 16;
-    dx = -15;
-    dy = -8;
-
-    // Compute C
-    C = dx*y1 - dy*x1;
-
-    // Plug in implicit line
-    return dy * x - dx * y + C;
-}
-
-unsigned char get_mask_xy(unsigned char x, unsigned char y, unsigned char page) {
-    if (page == 7 || page < 2) {
-        return 1;
-    }
-
-    else if (page == 2) {
-        return (f1(x, y) < 0 || f1_prime(x, y) > 0);
-    }
-
-    return 0;
-}
-
 unsigned char byte_mask(unsigned char x, unsigned char page) {
-    unsigned char byte = 0, b;
+    unsigned char byte;          // final mask for this column
+    unsigned char base_y;        // lowest y in this byte
+    unsigned char b;             // loop counter
+    unsigned char ax;            // apex x
+    unsigned char ay;            // apex y
+    int vx;                      // x relative to apex/reference
+    int vy;                      // y relative to apex/reference
+    int crossR;                  // right edge cross product
+    int crossL;                  // left edge cross product              
+    int stepR;
+    int stepL;
+    
+    byte = 0;
+    base_y = (7 - page) * 8;  /* y-coordinate of first pixel in this byte */
 
-    for (b = 0; b < 8; b++) {
-        if (get_mask_xy(x, (7 - page) * 8 + b, page)) {
-            byte |= 0x80 >> b;
+    /* Quick reject: skip entire column */
+    if (page == 7 || page < 2 || x > player_x + 22 || x < (int)player_x - 16) {
+        return 0xFF; /* fully masked */
+    }
+
+    /* Tunnel corridor (no masking in center) */
+    if (x >= player_x && x < player_x + 6) {
+        return 0x00;
+    }
+
+    /* ---- Page 2: wedge ---- */
+    if (page == 2) {
+        ax = player_x + 3;   /* apex x */
+        ay = 51;             /* apex y */
+
+        vx = (int)x - (int)ax;          /* constant per column */
+        vy = (int)base_y - (int)ay;     /* starting y for this byte */
+
+        /* Initial cross products for the first pixel */
+        crossR = 19 * vy + 12 * vx;     /* right edge vector (19,-12) */
+        crossL = -19 * vy + 12 * vx;    /* left edge vector (-19,-12) */
+
+        for (b = 0; b < 8; b++) {
+            /* inside wedge? if not, mask bit = 1 */
+            if (!(crossR <= 0 && crossL >= 0)) {
+                byte |= (0x80 >> b);
+            }
+            /* move one pixel upward */
+            crossR += 19;  /* moving up adds +19 for right edge */
+            crossL -= 19;  /* moving up subtracts 19 for left edge */
+        }
+        return byte;
+    }
+
+    else {
+        /* --- Lower wedge opens upward --- */
+        ax = player_x + 3;
+        ay = 2;
+
+        vx = (int)x - (int)ax;
+        vy = (int)base_y - (int)ay;
+
+        crossR = 15 * vy - 30 * vx;
+        crossL = -15 * vy - 30 * vx;
+
+        for (b = 0; b < 8; b++) {
+            /* INSIDE means crossR >= 0 AND crossL <= 0 */
+            if (!(crossR >= 0 && crossL <= 0)) {
+                byte |= (0x80 >> b);
+            }
+            crossR += 15;
+            crossL -= 15;
+        }
+        return byte;
+    }
+}
+
+void tunnel_draw() {
+    unsigned char page, x;
+
+    GLCD_select_panel(0);
+
+    for (page = 0; page < 8; page++) {
+		GLCD_set_row(page);
+        GLCD_set_column(0);
+        for (x = 0; x < 64; x++) {
+			GLCD_write_data(byte_mask(x, page));
         }
     }
-
-    return byte;
 }
 
+void tunnel_shift() {
+    char start1, start2;
+    unsigned char i, page, b, byte, min, dx, width;
+    
+    GLCD_select_panel(0);
+
+    if (player_x < player_last_x) {
+        min = player_x;
+        dx = player_last_x - player_x;
+    } else {
+        min = player_last_x;
+        dx = player_x - player_last_x;
+    }
+
+    for (page = 2; page < 7; page ++) {
+        GLCD_set_row(page);
+
+        if (page == 2) {
+            width = 15 + dx;
+            start1 = (min < 16) ? 0 : min - 16;
+            start2 = min + 6;
+        }
+
+        if (page == 3) {
+            width = 5 + dx;
+            start1 = (min < 16) ? 0 : min - 16;
+            start2 = min + 18;
+        }
+
+        if (page == 4) {
+            width = 5 + dx;
+            start1 = (min < 12) ? 0 : min - 12;
+            start2 = min + 14;
+        }
+
+        if (page == 5) {
+            width = 5 + dx;
+            start1 = (min < 8) ? 0 : min - 8;
+            start2 = min + 10;
+        }
+
+        if (page == 6) {
+            width = 5 + dx;
+            start1 = (min < 4) ? 0 : min - 4;
+            start2 = player_x + 6;
+        }
+        
+        GLCD_set_column(start1);
+        for (i = start1; i < start1 + width; i++) {
+             if (i < player_x) GLCD_write_data(byte_mask(i, page));
+        }
+        
+        GLCD_set_column(start2);
+        for (i = start2; i < start2 + width; i++) {
+            if (i < 63 ) GLCD_write_data(byte_mask(i, page));
+        }
+    }
+}
+
+// `x` e `y` do canto inferior esquerdo
 void GLCD_write_char_xy(unsigned char x, unsigned char y, unsigned char code *ptr_array) {
     int i;
     unsigned char page = y >> 3;
@@ -429,7 +530,7 @@ void GLCD_write_char_xy(unsigned char x, unsigned char y, unsigned char code *pt
     if (page < 8){
         GLCD_set_row(7 - page);
         GLCD_set_column(x);
-        for(i=0;i<6;i++) { // 5x7 font, 5 chars + 1 blankspace
+        for(i=0;i<6;i++) {
             byte = ptr_array[i] << (8 - offset);
             if (tunnel_flag) byte |= byte_mask(x + i, 7 - page);
             GLCD_write_data(byte);
@@ -439,7 +540,7 @@ void GLCD_write_char_xy(unsigned char x, unsigned char y, unsigned char code *pt
     if (page > 0) {
         GLCD_set_row(8 - page);
         GLCD_set_column(x);
-        for(i=0;i<6;i++) { // 5x7 font, 5 chars + 1 blankspace
+        for(i=0;i<6;i++) {
             byte = ptr_array[i] >> offset;
             if (tunnel_flag) byte |= byte_mask(x + i, 8 - page);
             GLCD_write_data(byte);
@@ -473,24 +574,13 @@ void crash() {
     GLCD_set_column(player_x);
     GLCD_write_char(space);
     player_x = road_get_x(distance + 16, find_road_segment(distance + 16)) - 3;
+    if (tunnel_flag) tunnel_draw();
+    GLCD_set_row(6);
     GLCD_set_column(player_x);
     GLCD_write_char(car_sprite);
+
     
     delay_ms(200);
-}
-
-void tunnel_draw() {
-    unsigned char page, x;
-
-    GLCD_select_panel(0);
-
-    for (page = 0; page < 8; page++) {
-		GLCD_set_row(page);
-        GLCD_set_column(0);
-        for (x = 0; x < 64; x++) {
-			GLCD_write_data(byte_mask(x, page));
-        }
-    }
 }
 
 void obstacles_update() {
@@ -550,7 +640,7 @@ void road_draw_page(unsigned char page, unsigned char road_x[8]) {
                 byte |= (0x80 >> b);
             }
         }
-        if (tunnel_flag) byte |= byte_mask(i, page);
+        if (tunnel_flag) byte |= byte_mask(i - road_radius, page);
         GLCD_write_data(byte);
     }
     
@@ -564,7 +654,7 @@ void road_draw_page(unsigned char page, unsigned char road_x[8]) {
                 byte |= (0x80 >> b);
             }
         }
-        if (tunnel_flag) byte |= byte_mask(i, page);
+        if (tunnel_flag) byte |= byte_mask(i + road_radius, page);
         GLCD_write_data(byte);
     }
 }
@@ -599,30 +689,28 @@ void road_draw() {
 }
 
 void player_draw() {
-    if (player_x != player_last_x) {
-        GLCD_select_panel(0);
-        GLCD_set_row(6);	    /* Set page */
-        GLCD_set_column(player_last_x);	/* Set column */
-        GLCD_write_char(space);
-        GLCD_set_column(player_x);	/* Set column */
-        GLCD_write_char(car_sprite);
-    }
+    GLCD_select_panel(0);
+    GLCD_set_row(6);	    /* Set page */
+    GLCD_set_column(player_last_x);	/* Set column */
+    GLCD_write_char(space);
+    GLCD_set_column(player_x);	/* Set column */
+    GLCD_write_char(car_sprite);
 }
 
 void player_update() {
     char input;
     player_last_x = player_x;
-    input = serial_receive();
+    input = keypad_read();
     switch (input) {
         case '7':
-            if (player_x <= 3) {
+            if (player_x <= 2) {
                 player_x = 0;
             } else {
-                player_x -= 3;
+                player_x -= 2;
             }
             break;
         case '9':
-            player_x += 3;
+            player_x += 2;
             if (player_x >= 58) {
                 player_x = 58;
             }
@@ -647,19 +735,25 @@ void player_update() {
 }
 
 void game_update() {
-    player_draw();
+    if (player_x != player_last_x) {
+        player_draw();
+        if (tunnel_flag) {
+            tunnel_shift();
+        }
+    }
     obstacles_draw();
     road_draw();
     player_update();
     obstacles_update();
     road_update();
 
-    // if (distance >= 100 && !tunnel_flag) {
-    //     tunnel_flag = 1;
-    //     tunnel_draw();
-    // }
+    if (distance >= 4000 && !tunnel_flag) {
+        tunnel_flag = 1;
+        tunnel_draw();
+        player_draw();
+    }
 
-    if (distance >= 15000) win_flag = 1;
+    if (distance >= 6000) win_flag = 1;
 }
 
 void player_init() {
@@ -704,6 +798,7 @@ void game_init() {
     last_distance = 0;
     game_over_flag = 0;
     win_flag = 0;
+    tunnel_flag = 0;
     player_init();
     road_init();
     obstacles_init();
@@ -781,7 +876,7 @@ int main() {
 
         while (1) {
             game_update();
-            delay_ms(12);
+            delay_ms(33);
 
             if (game_over_flag) {
                 game_over();
