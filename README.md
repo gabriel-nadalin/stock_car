@@ -4,6 +4,13 @@ Este projeto é um jogo de corrida, inspirado no Stock Car de ZX81, desenvolvido
 
 O jogo foi criado utilizando o compilador Keil para desenvolvimento em C e testado no simulador Proteus, permitindo validar o funcionamento do código antes de rodar no hardware real.
 
+Este projeto foi desenvolvido como parte da disciplina Projeto de Sistemas Computacionais Embarcados, com o objetivo de aplicar conceitos de programação em baixo nível, interface com hardware e renderização gráfica em sistemas embarcados.  
+
+- Professor Emerson Carlos Pedrino  
+- Bacharelado em Ciência da Computação
+- Departamento de Computação
+- Universidade Federal de São Carlos
+
 ## Funcionalidades
 
 - Estrada gerada proceduralmente com segmentos aleatórios
